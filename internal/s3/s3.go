@@ -1,7 +1,9 @@
 package s3
 
 import (
+    "crypto/tls"
 	"fmt"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -18,6 +20,8 @@ type RootModule struct{}
 type S3 struct {
 	vu modules.VU
 }
+
+var httpClient *http.Client
 
 // Ensure the interfaces are implemented correctly.
 var (
@@ -63,6 +67,11 @@ func (s *S3) Connect(endpoint string) (*Client, error) {
 		options.UsePathStyle = true
 		// do not retry failed requests, by default client does up to 3 retry
 		options.Retryer = aws.NopRetryer{}
+		options.HTTPClient = &http.Client{
+            Transport: &http.Transport{
+                TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+            },
+        }
 	})
 
 	// register metrics
