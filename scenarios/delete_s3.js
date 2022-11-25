@@ -3,37 +3,37 @@ import s3 from 'k6/x/neofs/s3';
 import { Counter } from 'k6/metrics';
 
 const obj_registry = registry.open(__ENV.REGISTRY_FILE || 'registry.dat');
-const validate_percent = __ENV.VALIDATE_PERCENT || '2';
+const delete_percent = __ENV.DELETE_PERCENT || '2';
 const time_limit = __ENV.TIME_LIMIT || "10";
 const clients = __ENV.CLIENTS || "2"
 const s3_endpoint = __ENV.ENDPOINT || "http://10.78.69.118:8084";
 const s3_client = s3.connect(s3_endpoint);
 
 const obj_counters = {
-    verified: new Counter('verified_obj'),
+    deleted: new Counter('deleted_obj'),
     skipped: new Counter('skipped_obj'),
     invalid: new Counter('invalid_obj'),
 };
 
-const obj_to_verify_selector = registry.getSelector(
+const obj_to_delete_selector = registry.getSelector(
     __ENV.REGISTRY_FILE,
-    "obj_to_verify",
+    "obj_to_delete",
     __ENV.SELECTION_SIZE ? parseInt(__ENV.SELECTION_SIZE) : 0,
     {
         status: "created",
     }
 );
-const obj_to_verify_count = obj_to_verify_selector.count();
-const iterations = Math.max(1, obj_to_verify_count);
+const obj_to_delete_count = obj_to_delete_selector.count();
+const iterations = Math.max(1, obj_to_delete_count);
 const vus = Math.min(parseInt(clients), iterations);
 const scenarios = {};
 
-scenarios.verify = {
+scenarios.delete = {
     executor: 'shared-iterations',
     vus,
     iterations,
     maxDuration: `${time_limit}s`,
-    exec: 'obj_verify',
+    exec: 'obj_delete',
     gracefulStop: '5s',
 };
 
@@ -55,29 +55,29 @@ export function setup() {
     }
 }
 
-export function obj_verify() {
-    const obj = obj_to_verify_selector.nextObject();
+export function obj_delete() {
+    const obj = obj_to_delete_selector.nextObject();
     if (!obj) {
-        console.log("All objects have been verified");
+        console.log("All objects have been deleted");
         return;
     }
-    if (validate_percent === '100' || Math.random() < parseInt(validate_percent) / 100) {
-        const obj_status = verify_object_with_retries(obj, 1);
+    if (delete_percent === '100' || Math.random() < parseInt(delete_percent) / 100) {
+        const obj_status = delete_object_with_retries(obj, 1);
         obj_counters[obj_status].add(1);
         obj_registry.setObjectStatus(obj.id, obj_status);
     }
 }
 
-function verify_object_with_retries(obj, attempts) {
+function delete_object_with_retries(obj, attempts) {
     for (let i = 0; i < attempts; i++) {
-        const result = s3_client.verifyHash(obj.s3_bucket, obj.s3_key, obj.payload_hash);
+        const result = s3_client.delete(obj.s3_bucket, obj.s3_key);
         if (result.success) {
-            return "verified";
+            return "deleted";
         } else if (result.error === "hash mismatch") {
             return "invalid";
         }
         // Unless we explicitly saw that there was a hash mismatch, then we will retry after a delay
-        console.log(`Verify error on ${obj.id}: ${result.error}. Object will be re-tried`);
+        console.log(`Delete error on ${obj.id}: ${result.error}. Object will be re-tried`);
     }
     return "invalid";
 }

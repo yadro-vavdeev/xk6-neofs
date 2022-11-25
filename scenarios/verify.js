@@ -5,6 +5,7 @@ import { sleep } from 'k6';
 import { Counter } from 'k6/metrics';
 
 const obj_registry = registry.open(__ENV.REGISTRY_FILE);
+const validate_percent = __ENV.VALIDATE_PERCENT || '2';
 
 // Time limit (in seconds) for the run
 const time_limit = __ENV.TIME_LIMIT || "60";
@@ -41,11 +42,12 @@ if (__ENV.S3_ENDPOINTS) {
 const obj_to_verify_selector = registry.getSelector(
     __ENV.REGISTRY_FILE,
     "obj_to_verify",
-    __ENV.SELECTION_SIZE ? parseInt(__ENV.SELECTION_SIZE) : 0,
+    0,
     {
         status: "created",
     }
 );
+//.filter(() => Math.random() < parseInt(validate_percent) / 100);
 const obj_to_verify_count = obj_to_verify_selector.count();
 // Execute at least one iteration (executor shared-iterations can't run 0 iterations)
 const iterations = Math.max(1, obj_to_verify_count);
@@ -74,7 +76,7 @@ export function setup() {
         const obj_selector = registry.getSelector(
             __ENV.REGISTRY_FILE,
             status,
-            __ENV.SELECTION_SIZE ? parseInt(__ENV.SELECTION_SIZE) : 0,
+            0,
             { status });
         counter.add(obj_selector.count());
     }
@@ -91,10 +93,14 @@ export function obj_verify() {
         return;
     }
 
-    const obj_status = verify_object_with_retries(obj, 3);
-    obj_counters[obj_status].add(1);
-    obj_registry.setObjectStatus(obj.id, obj_status);
+    if (validate_percent === '100' || Math.random() < parseInt(validate_percent) / 100) {
+        const obj_status = verify_object_with_retries(obj, 3);
+        obj_counters[obj_status].add(1);
+        obj_registry.setObjectStatus(obj.id, obj_status);
+    }
 }
+
+obj.s3_bucket = undefined;
 
 function verify_object_with_retries(obj, attempts) {
     for (let i = 0; i < attempts; i++) {
